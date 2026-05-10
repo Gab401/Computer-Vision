@@ -9,7 +9,7 @@ THRESHOLD = 100  # Threshold for binary inverse thresholding (tune based on ligh
 
 
 def main():
-    window_name = 'Eye Tracking - Step 2 (Face & Eye)'
+    window_name = 'Eye Tracking'
     
     # Load Haar cascades for face and eye detection
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -27,6 +27,13 @@ def main():
     kernel = np.ones((3, 3), np.uint8)
 
     cv2.namedWindow(window_name)
+
+    # --- SMOOTHING VARIABLES ---
+    # Dictionary to store previous center coordinates for each eye
+    # Key: Eye index (rough estimation, 0 for left, 1 for right in the loop)
+    # Value: (prev_cx, prev_cy)
+    prev_centers = {}
+    alpha = 0.6  # Smoothing factor (0.0 = max smoothing/lag, 1.0 = no smoothing)
 
     while True:
         ret, frame = cap.read()
@@ -64,8 +71,15 @@ def main():
                 minSize=(20, 20)
             )
 
+            # Clear previous centers if number of eyes changes drastically (to avoid mixing up eyes)
+            if len(eyes) != len(prev_centers):
+                prev_centers.clear()
+
+            # We sort eyes by x-coordinate to consistently identify left (0) vs right (1) eye
+            eyes = sorted(eyes, key=lambda e: e[0])
+
             # Loop over detected eyes
-            for (ex, ey, ew, eh) in eyes:
+            for i, (ex, ey, ew, eh) in enumerate(eyes):
                 # Draw green rectangle around each eye
                 cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 2)
 
@@ -96,11 +110,26 @@ def main():
                     
                     # Prevent division by zero
                     if M["m00"] != 0:
-                        cx = int(M["m10"] / M["m00"])
-                        cy = int(M["m01"] / M["m00"])
+                        raw_cx = int(M["m10"] / M["m00"])
+                        raw_cy = int(M["m01"] / M["m00"])
 
-                        # Draw a solid red circle at the pupil's center
-                        cv2.circle(eye_roi_color, (cx, cy), 2, (0, 0, 255), -1)
+                        # Temporal smoothing of the pupil center
+                        if i in prev_centers:
+                            # Apply Exponential Moving Average formula
+                            prev_cx, prev_cy = prev_centers[i]
+                            
+                            smoothed_cx = int(alpha * raw_cx + (1 - alpha) * prev_cx)
+                            smoothed_cy = int(alpha * raw_cy + (1 - alpha) * prev_cy)
+                        else:
+                            # First time seeing this eye, no smoothing possible yet
+                            smoothed_cx = raw_cx
+                            smoothed_cy = raw_cy
+
+                        # Store current smoothed position for the next frame
+                        prev_centers[i] = (smoothed_cx, smoothed_cy)
+
+                        # Draw the smoothed pupil center
+                        cv2.circle(eye_roi_color, (smoothed_cx, smoothed_cy), 2, (0, 0, 255), -1)
 
         # Display the frame
         cv2.imshow(window_name, frame)
