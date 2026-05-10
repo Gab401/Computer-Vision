@@ -3,13 +3,13 @@ import numpy as np
 
 
 # Constants
+window_name = 'Eye Tracking'
 THRESHOLD = 100  # Threshold for binary inverse thresholding (tune based on lighting conditions)
 
 
 
 
 def main():
-    window_name = 'Eye Tracking'
     
     # Load Haar cascades for face and eye detection
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -80,12 +80,18 @@ def main():
 
             # Loop over detected eyes
             for i, (ex, ey, ew, eh) in enumerate(eyes):
-                # Draw green rectangle around each eye
-                cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 2)
+                # Cut the top 30% of the bounding box to remove the eyebrow
+                crop_top = int(eh * 0.30)
+                
+                ey_cropped = ey + crop_top
+                eh_cropped = eh - crop_top
 
-                # Extract the specific Eye ROI
-                eye_roi_gray = roi_gray[ey:ey + eh, ex:ex + ew]
-                eye_roi_color = roi_color[ey:ey + eh, ex:ex + ew]
+                # Draw green rectangle around the cropped eye (without eyebrow)
+                cv2.rectangle(roi_color, (ex, ey_cropped), (ex + ew, ey_cropped + eh_cropped), (0, 255, 0), 2)
+                
+                # Extract the specific Eye ROI using the cropped coordinates
+                eye_roi_gray = roi_gray[ey_cropped:ey_cropped + eh_cropped, ex:ex + ew]
+                eye_roi_color = roi_color[ey_cropped:ey_cropped + eh_cropped, ex:ex + ew]
 
                 # Gaussian Blur to reduce image noise
                 blur = cv2.GaussianBlur(eye_roi_gray, (7, 7), 0)
