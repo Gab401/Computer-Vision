@@ -1,15 +1,13 @@
 # Real-Time Eye Tracking & Deep Learning Verification System
 
 ## Project Overview
-This project is an interactive, real-time eye-tracking application developed as a final assessment for the Computer Vision course. It captures a live webcam feed to detect faces, extract eye regions, isolate the pupils, and map the user's gaze to a virtual screen. 
+This project is an interactive, real-time eye-tracking application developed as a final assessment for the Computer Vision course. It captures a live webcam feed to detect faces, extract eye regions, isolate the pupils, and detect the user's gaze.
 
 In strict adherence to the course guidelines, the core system is built entirely using Traditional Computer Vision techniques. A Deep Learning model (OpenCV DNN ResNet-SSD) is integrated purely as a supplementary verification step to confirm the accuracy of the traditional face detection pipeline.
 
 ---
 
 ## How to Run the Application
-
-**Important Note for Grading:** Please ensure these steps are followed to execute the application successfully.
 
 **Prerequisites:**
 * Python 3.x installed on your system.
@@ -35,13 +33,13 @@ Upon the very first execution, the dl_verifier.py script will automatically down
 
 **Step 4: Interacting with the Application**
 
-Keep your head relatively still and move your eyes to see the gaze estimation mapped onto the "Virtual Screen Mapping" window.
+Keep your head relatively still and move your eyes to see the gaze detection onto the window.
 
 To quit the application cleanly, press the 'q' key on your keyboard or click the window's close (X) button.
 
 ## Concepts and Methodologies Utilized
 
-This project successfully integrates more than half of the concepts outlined in the course syllabus. Specifically:
+
 
 **Fundamentals of Computer Vision & OpenCV:**
  Used OpenCV to read webcam streams, display real-time frames, and manipulate images.
@@ -82,8 +80,6 @@ This project successfully integrates more than half of the concepts outlined in 
 
 **Temporal Smoothing:** An Exponential Moving Average (EMA) low-pass filter is applied to the spatial coordinates of the pupil to reduce camera jitter and stabilize tracking.
 
-**Virtual Mapping:** The relative coordinates of the pupil inside the eye bounding box are mapped to a secondary "Virtual Screen" window to simulate gaze interaction.
-
 **Deep Learning Verification**: Concurrently, a Caffe-based ResNet-SSD model processes the frame. A line and text overlay display the error vector between the classical CV detection and the DL detection to confirm accuracy in real-time.
 
 ## Performance Evaluation
@@ -102,7 +98,5 @@ The specific logic combining these concepts is entirely original. Specifically:
 - The "Top Cropping" algorithm to mathematically exclude eyebrow interference.
 
 - The Temporal Smoothing algorithm (Exponential Moving Average) to stabilize coordinate tracking across continuous frames without relying on heavy optical flow algorithms.
-
-- The Virtual Screen Mapping logic to convert relative eye bounding-box coordinates into an absolute simulated screen cursor.
 
 - The comparative verification module designed to continuously evaluate the error margin between the classical pipeline and the Deep Learning pipeline.
