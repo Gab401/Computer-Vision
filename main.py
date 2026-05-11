@@ -1,9 +1,19 @@
+# Main application for eye tracking using OpenCV and Deep Learning verification
+
+
+
+# General imports
+import math
 import cv2
+import dl_verifier
 import numpy as np
+
+# Local imports
+from dl_verifier import DeepLearningVerifier
 
 
 # Constants
-window_name = 'Eye Tracking'
+window_name = 'Eye Tracking - CV vs Deep Learning'
 THRESHOLD = 100  # Threshold for binary inverse thresholding (tune based on lighting conditions)
 
 
@@ -13,7 +23,10 @@ def main():
     
     # Load Haar cascades for face and eye detection
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye_tree_eyeglasses.xml')
+
+    # Initialize Deep Learning Verifier
+    dl_verifier = DeepLearningVerifier()
 
     cap = cv2.VideoCapture(0)
 
@@ -47,6 +60,9 @@ def main():
         # Convert to grayscale for Haar Cascades
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+        # Get Deep Learning baseline predictions for verification
+        dl_face_center = dl_verifier.get_face_center(frame)
+
         # Detect faces
         faces = face_cascade.detectMultiScale(
             gray_frame, 
@@ -56,9 +72,26 @@ def main():
 
         # Loop over detected faces
         for (x, y, w, h) in faces:
-            # Draw blue rectangle around the face
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            cv_face_cx = x + w // 2
+            cv_face_cy = y + h // 2
 
+            # Draw classical face bounding box and center (BLUE)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            cv2.circle(frame, (cv_face_cx, cv_face_cy), 4, (255, 0, 0), -1)
+
+            # --- DEEP LEARNING VERIFICATION STEP ---
+            if dl_face_center:
+                dl_cx, dl_cy = dl_face_center
+                
+                # Draw DL face center (ORANGE)
+                cv2.circle(frame, (dl_cx, dl_cy), 4, (0, 165, 255), -1)
+                
+                # Draw connecting line and calculate error
+                distance = math.sqrt((cv_face_cx - dl_cx)**2 + (cv_face_cy - dl_cy)**2)
+                cv2.line(frame, (cv_face_cx, cv_face_cy), (dl_cx, dl_cy), (0, 255, 255), 1)
+                cv2.putText(frame, f"Face DL Error: {int(distance)}px", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+
+            # --- EYE TRACKING PIPELINE ---
             # Extract the Region of Interest (ROI)
             roi_gray = gray_frame[y:y + h, x:x + w]
             roi_color = frame[y:y + h, x:x + w]
