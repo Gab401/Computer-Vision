@@ -5,7 +5,6 @@
 # General imports
 import math
 import cv2
-import dl_verifier
 import numpy as np
 
 # Local imports
@@ -14,7 +13,6 @@ from dl_verifier import DeepLearningVerifier
 
 # Constants
 window_name = 'Eye Tracking - CV vs Deep Learning'
-THRESHOLD = 100  # Threshold for binary inverse thresholding (tune based on lighting conditions)
 
 
 
@@ -48,6 +46,9 @@ def main():
     prev_centers = {}
     alpha = 0.6  # Smoothing factor (0.0 = max smoothing/lag, 1.0 = no smoothing)
 
+    # Track open histogram windows to manage them cleanly
+    open_hist_windows = set()
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -70,6 +71,8 @@ def main():
             minNeighbors=5
         )
 
+        current_frame_hist_windows = set()
+     
         # Loop over detected faces
         for (x, y, w, h) in faces:
             cv_face_cx = x + w // 2
@@ -90,6 +93,8 @@ def main():
                 distance = math.sqrt((cv_face_cx - dl_cx)**2 + (cv_face_cy - dl_cy)**2)
                 cv2.line(frame, (cv_face_cx, cv_face_cy), (dl_cx, dl_cy), (0, 255, 255), 1)
                 cv2.putText(frame, f"Face DL Error: {int(distance)}px", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+            else:
+                cv2.putText(frame, "Face DL Error: N/A", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
 
             # --- EYE TRACKING PIPELINE ---
             # Extract the Region of Interest (ROI)
@@ -126,12 +131,24 @@ def main():
                 eye_roi_gray = roi_gray[ey_cropped:ey_cropped + eh_cropped, ex:ex + ew]
                 eye_roi_color = roi_color[ey_cropped:ey_cropped + eh_cropped, ex:ex + ew]
 
-                # Gaussian Blur to reduce image noise
+                # --- HISTOGRAM ANALYSIS (Independent Windows) ---
+                hist = cv2.calcHist([eye_roi_gray], [0], None, [256], [0, 256])
+                cv2.normalize(hist, hist, 0, 100, cv2.NORM_MINMAX)
+                hist_img = np.zeros((100, 256, 3), dtype=np.uint8)
+                
+                for j in range(256):
+                    cv2.line(hist_img, (j, 100), (j, 100 - int(hist[j][0])), (255, 255, 255), 1)
+                
+                hist_win_name = f"Histogram - Eye {i}"
+                cv2.imshow(hist_win_name, hist_img)
+                current_frame_hist_windows.add(hist_win_name)
+                open_hist_windows.add(hist_win_name)
+
+                # Gaussian Blur
                 blur = cv2.GaussianBlur(eye_roi_gray, (7, 7), 0)
 
-                # Inverse Threshold (Dark pupil becomes white)
-                # The threshold value might need tuning based on lighting!
-                _, thresh = cv2.threshold(blur, THRESHOLD, 255, cv2.THRESH_BINARY_INV)
+                # Otsu's method
+                _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
                 # Morphology (Open) to clean up small white dots (noise)
                 thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
@@ -143,6 +160,27 @@ def main():
                     # Sort contours by area in descending order and pick the largest
                     contours = sorted(contours, key=cv2.contourArea, reverse=True)
                     largest_contour = contours[0]
+
+                    # --- SHAPE APPROXIMATION AND CONVEX HULL ---
+                    # Approximate the shape of the pupil
+                    epsilon = 0.02 * cv2.arcLength(largest_contour, True)
+                    approx_shape = cv2.approxPolyDP(largest_contour, epsilon, True)
+                    cv2.drawContours(eye_roi_color, [approx_shape], -1, (255, 255, 0), 1) # Cyan
+
+                    # Compute and draw the convex hull
+                    hull = cv2.convexHull(largest_contour)
+                    cv2.drawContours(eye_roi_color, [hull], -1, (255, 0, 255), 1) # Magenta
+
+                    # --- CAMSHIFT TRACKING ---
+                    x_c, y_c, w_c, h_c = cv2.boundingRect(largest_contour)
+                    if w_c > 0 and h_c > 0:
+                        track_window = (x_c, y_c, w_c, h_c)
+                        term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 1)
+                        # CamShift uses the binary threshold as a probability map
+                        ret_camshift, track_window = cv2.CamShift(thresh, track_window, term_crit)
+                        pts = cv2.boxPoints(ret_camshift)
+                        pts = np.int32(pts)
+                        cv2.polylines(eye_roi_color, [pts], True, (0, 165, 255), 1) # Orange bounding box
 
                     # Calculate moments to find the centroid of the contour
                     M = cv2.moments(largest_contour)
@@ -168,7 +206,16 @@ def main():
                         prev_centers[i] = (smoothed_cx, smoothed_cy)
 
                         # Draw the smoothed pupil center
-                        cv2.circle(eye_roi_color, (smoothed_cx, smoothed_cy), 2, (0, 0, 255), -1)
+                        cv2.circle(eye_roi_color, (smoothed_cx, smoothed_cy), 4, (0, 0, 255), -1)
+
+        # Cleanup obsolete histogram windows (if an eye is lost)
+        windows_to_close = open_hist_windows - current_frame_hist_windows
+        for win in windows_to_close:
+            try:
+                cv2.destroyWindow(win)
+            except cv2.error:
+                pass
+        open_hist_windows = current_frame_hist_windows
 
         # Display the frame
         cv2.imshow(window_name, frame)
